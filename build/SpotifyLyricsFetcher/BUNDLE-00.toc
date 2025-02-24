@@ -1,0 +1,3 @@
+([('SpotifyLyricsFetcher',
+   '/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/dist/SpotifyLyricsFetcher',
+   'EXECUTABLE')],)
