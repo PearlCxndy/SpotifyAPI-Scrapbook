@@ -2,13 +2,22 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
 from dotenv import load_dotenv
+import os
 
-# Load API keys from .env
-load_dotenv()
+# Load API keys from API.env explicitly
+dotenv_path = os.path.join(os.path.dirname(__file__), "API.env")
+load_dotenv(dotenv_path)
 
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
+
+
+# Debugging: Print values to verify they load
+print(f"SPOTIFY_CLIENT_ID: {SPOTIFY_CLIENT_ID}")
+print(f"SPOTIFY_CLIENT_SECRET: {SPOTIFY_CLIENT_SECRET}")
+print(f"SPOTIFY_REDIRECT_URI: {SPOTIFY_REDIRECT_URI}")
+
 
 # Authenticate Spotify API
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(

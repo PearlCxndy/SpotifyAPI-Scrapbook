@@ -5,7 +5,7 @@ a = Analysis(
     ['GUI.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('API.env', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
