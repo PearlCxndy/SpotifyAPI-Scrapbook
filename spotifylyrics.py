@@ -18,7 +18,6 @@ print(f"SPOTIFY_CLIENT_ID: {SPOTIFY_CLIENT_ID}")
 print(f"SPOTIFY_CLIENT_SECRET: {SPOTIFY_CLIENT_SECRET}")
 print(f"SPOTIFY_REDIRECT_URI: {SPOTIFY_REDIRECT_URI}")
 
-
 # Authenticate Spotify API
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_id=SPOTIFY_CLIENT_ID,
@@ -28,14 +27,15 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
 ))
 
 def get_current_song():
-    """Get the currently playing song from Spotify."""
+    """Get the currently playing song from Spotify along with playback progress."""
     current_track = sp.current_user_playing_track()
-    if current_track is not None:
+
+    if current_track is not None and current_track["item"] is not None:
         song = current_track["item"]["name"]
         artist = current_track["item"]["artists"][0]["name"]
-        return song, artist
-    return None, None
+        progress_ms = current_track["progress_ms"]  # Get progress in milliseconds
 
-# Example usage
-song, artist = get_current_song()
-print(f"Now Playing: {song} by {artist}")
+        progress_sec = progress_ms // 1000 if progress_ms is not None else 0  # Convert to seconds
+        return song, artist, progress_sec
+
+    return "No song playing", "Unknown Artist", 0  # Default return with progress=0
