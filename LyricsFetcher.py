@@ -1,18 +1,34 @@
-import syncedlyrics
+
 import re
 from datetime import datetime
+import syncedlyrics
+
 
 def get_lyrics(song, artist):
-    """
-    Fetches synchronized lyrics for the given song and artist using the SyncedLyrics library.
-    """
-    searchTerm = f"{song} {artist}"
-    lyrics = syncedlyrics.search(searchTerm)  # Fetches lyrics with timestamps
+    print(f"🔍 Searching lyrics for: {song} by {artist}")  # Debugging line
 
-    if lyrics is None or lyrics.isspace():
-        return "No synced lyrics found."
-    
-    return lyrics
+    # Fetch lyrics from SyncedLyrics or Genius
+    lyrics_list = syncedlyrics.search(f"{song} {artist}")
+
+    if not lyrics_list:
+        print("❌ No lyrics found.")  # Debugging line
+        return None  # Return None if no lyrics are found
+
+    print("✅ Lyrics found!")  # Debugging line
+
+    lyrics_dict = {}
+    timestamps_list = []
+
+    for line in lyrics_list.split("\n"):  # Ensure it's being split correctly
+        match = re.match(r"\[(\d{2}:\d{2}.\d{2})\](.*)", line)
+        if match:
+            timestamp, text = match.groups()
+            lyrics_dict[timestamp] = text.strip()
+            timestamps_list.append(timestamp)
+
+    return lyrics_dict, timestamps_list
+
+
 
 def parse_synced_lyrics(lrc_text):
     """
