@@ -7,9 +7,6 @@ import yake
 from sentence_transformers import SentenceTransformer, util
 import json
 import os
-from PIL import Image, ImageDraw, ImageFont
-import tkinter as tk
-from tkinter import Label
 
 # Load Hugging Face NLP models
 print("Loading models... (this may take a while on first run)")
@@ -51,22 +48,6 @@ def map_keywords_to_emojis(keywords):
         matched_emojis.append(emoji_char)
     return matched_emojis if matched_emojis else ["❓"]
 
-def generate_emoji_image(emojis, filename='emoji_output.png'):
-    """Generates an image from a list of emojis."""
-    img = Image.new('RGB', (200, 200), color = (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    font = ImageFont.load_default()
-    draw.text((10, 80), ''.join(emojis), font=font, fill=(0, 0, 0))
-    img.save(filename)
-
-def show_emoji_gui(emojis):
-    """Display emojis in a simple GUI window."""
-    root = tk.Tk()
-    root.title("Emoji Display")
-    label = Label(root, text=' '.join(emojis), font=("Arial", 60))
-    label.pack(pady=20)
-    root.mainloop()
-
 def extract_lyrics_themes(lyrics):
     """Extracts keywords, emotions, and corresponding emojis from lyrics."""
     if not lyrics.strip():
@@ -79,49 +60,4 @@ def extract_lyrics_themes(lyrics):
 
     return top_emotions, keywords, emojis
 
-def real_time_lyrics_analysis():
-    """Fetches Spotify lyrics and runs real-time NLP analysis."""
-
-    print("\U0001F3B5 Waiting for Spotify song...")
-    song, artist, _ = get_current_song()
-
-    if song == "No song playing":
-        print("\u274C No song detected. Play something on Spotify!")
-        return
-
-    print(f"\U0001F3B6 Now Playing: {song} by {artist}")
-
-    lyrics_result = get_lyrics(song, artist)
-    print(f"\U0001F9D0 DEBUG: get_lyrics() returned -> {lyrics_result}")
-
-    if isinstance(lyrics_result, tuple) and len(lyrics_result) >= 2:
-        lyrics_data, timestamps = lyrics_result[:2]
-    else:
-        print("\u274C Error: get_lyrics() did not return expected values.")
-        return
-
-    print("\u2705 Lyrics Found! Starting real-time analysis...")
-
-    while True:
-        song, artist, current_progress = get_current_song()
-        if song == "No song playing":
-            print("\u274C Song stopped. Exiting...")
-            break
-
-        closest_time = min(timestamps, key=lambda t: abs(convert_to_seconds(t) - current_progress))
-        current_lyric = lyrics_data.get(closest_time, "\U0001F3B5...")
-
-        emotions, keywords, emojis = extract_lyrics_themes(current_lyric)
-
-        print("\n\U0001F3A4", current_lyric)
-        print(f"\U0001F3AD Emotions: {emotions}")
-        print(f"\U0001F511 Keywords: {keywords}")
-        print(f"\U0001F49C Emojis: {emojis}")
-
-        generate_emoji_image(emojis)
-        show_emoji_gui(emojis)
-
-        time.sleep(2)  # Wait 2 sec before checking again
-
-# Run real-time lyrics analysis
-real_time_lyrics_analysis()
+# Removed all standalone execution and GUI display logic to avoid conflicts when imported.
