@@ -3,14 +3,16 @@ import os
 import random
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QFileDialog,
-    QHBoxLayout, QSlider, QSizeGrip
+    QHBoxLayout, QSlider, QSizeGrip, QStackedLayout, QLineEdit
 )
-from PyQt6.QtGui import QPixmap, QMouseEvent, QFont
+from PyQt6.QtGui import QPixmap, QMouseEvent, QFont, QFontDatabase
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QPropertyAnimation
 from rembg import remove
 from emoji_generator import extract_lyrics_themes
 from spotifylyrics import get_current_song
 from LyricsFetcher import get_lyrics, convert_to_seconds
+from PyQt6.QtWidgets import QStackedLayout
+
 
 class ResizableDraggableImage(QLabel):
     def __init__(self, parent, image_path):
@@ -25,12 +27,14 @@ class ResizableDraggableImage(QLabel):
         self.dragging = False
         self.offset = QPoint()
         self.show_border = True  # Toggle for dashed border
+        self.parent = parent  # Reference to the parent (LyricsApp)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = True
             self.offset = event.pos()
             self.toggle_border()
+            self.parent.set_selected_item(self)  # Notify parent that this item is selected
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.dragging:
@@ -56,16 +60,18 @@ class DraggableEmoji(QLabel):
     def __init__(self, parent, emoji, size):
         super().__init__(parent)
         self.setText(emoji)
-        self.setFont(QFont('Arial', size))
+        self.setFont(QFont('Arial', size))  # Use custom font
         self.setStyleSheet("background-color: transparent;")
         self.setGeometry(random.randint(100, 800), random.randint(100, 600), size, size)
         self.dragging = False
         self.offset = QPoint()
+        self.parent = parent  # Reference to the parent (LyricsApp)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = True
             self.offset = event.pos()
+            self.parent.set_selected_item(self)  # Notify parent that this item is selected
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.dragging:
@@ -74,93 +80,195 @@ class DraggableEmoji(QLabel):
     def mouseReleaseEvent(self, event: QMouseEvent):
         self.dragging = False
 
+
+
 class LyricsApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Spotify Lyrics Fetcher with Image Upload")
-        self.setGeometry(100, 100, 1000, 800)
-        self.setStyleSheet("background-color: white;")
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setStyleSheet("background: transparent;")
         self.active_emojis = []
         self.lyrics_dict = {}
         self.scrapbook_area = QRect(100, 100, 800, 600)
-        self.emoji_size = 50  # Default emoji size
-        self.image_size = 100  # Default image size
+        self.emoji_size = 50
+        self.image_size = 100
         self.emoji_enabled = False
+        self.selected_item = None
+
+ # Load custom font
+        font_path = "/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
+        font_id = QFontDatabase.addApplicationFont(font_path)
+        if font_id == -1:
+            print("Failed to load custom font. Falling back to Arial.")
+            self.custom_font = "Arial"
+        else:
+            font_families = QFontDatabase.applicationFontFamilies(font_id)
+            print(f"Available font families: {font_families}")
+            self.custom_font = font_families[0] if font_families else "Arial"
+            print(f"Custom font loaded: {self.custom_font}")
+
+        # Get screen dimensions
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        self.resize(screen_geometry.width(), screen_geometry.height())
 
         # Main layout
         main_layout = QHBoxLayout()
 
-        # Left side layout for sliders
-        left_layout = QVBoxLayout()
-        left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # Left side layout for sliders (combined and compact)
+        self.left_layout = QVBoxLayout()
+        self.left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # Label for combined sliders
+        resize_label = QLabel("Resize Controls")
+        resize_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
+        self.left_layout.addWidget(resize_label)
+
+        # Stacked layout for sliders
+        self.stacked_layout = QStackedLayout()
 
         # Slider for emoji size
         self.emoji_slider = QSlider(Qt.Orientation.Vertical)
         self.emoji_slider.setMinimum(20)
         self.emoji_slider.setMaximum(200)
         self.emoji_slider.setValue(self.emoji_size)
-        self.emoji_slider.valueChanged.connect(self.update_emoji_size)
-        left_layout.addWidget(QLabel("Emoji Size"))
-        left_layout.addWidget(self.emoji_slider)
+        self.emoji_slider.valueChanged.connect(self.update_selected_item_size)
+        self.emoji_slider.setStyleSheet("""
+            QSlider::groove:vertical {
+                background: white;
+                width: 10px;
+                border-radius: 5px;
+            }
+            QSlider::handle:vertical {
+                background: black;
+                width: 20px;
+                height: 20px;
+                margin: -5px 0;
+                border-radius: 10px;
+            }
+        """)
+        emoji_slider_widget = QWidget()
+        emoji_slider_layout = QVBoxLayout()
+        emoji_slider_layout.addWidget(QLabel("Emoji Size"))
+        emoji_slider_layout.addWidget(self.emoji_slider)
+        emoji_slider_widget.setLayout(emoji_slider_layout)
+        self.stacked_layout.addWidget(emoji_slider_widget)
 
         # Slider for image size
         self.image_slider = QSlider(Qt.Orientation.Vertical)
         self.image_slider.setMinimum(20)
         self.image_slider.setMaximum(200)
         self.image_slider.setValue(self.image_size)
-        self.image_slider.valueChanged.connect(self.update_image_size)
-        left_layout.addWidget(QLabel("Image Size"))
-        left_layout.addWidget(self.image_slider)
+        self.image_slider.valueChanged.connect(self.update_selected_item_size)
+        self.image_slider.setStyleSheet("""
+            QSlider::groove:vertical {
+                background: white;
+                width: 10px;
+                border-radius: 5px;
+            }
+            QSlider::handle:vertical {
+                background: black;
+                width: 20px;
+                height: 20px;
+                margin: -5px 0;
+                border-radius: 10px;
+            }
+        """)
+        image_slider_widget = QWidget()
+        image_slider_layout = QVBoxLayout()
+        image_slider_layout.addWidget(QLabel("Image Size"))
+        image_slider_layout.addWidget(self.image_slider)
+        image_slider_widget.setLayout(image_slider_layout)
+        self.stacked_layout.addWidget(image_slider_widget)
 
-        # Add left layout to main layout
-        main_layout.addLayout(left_layout)
+        # Add stacked layout to left layout
+        self.left_layout.addLayout(self.stacked_layout)
+
+        # Add left layout to main layout (hidden by default)
+        self.sidebar_widget = QWidget()
+        self.sidebar_widget.setLayout(self.left_layout)
+        self.sidebar_widget.setFixedWidth(120)  # Make the sidebar more compact
+        self.sidebar_widget.hide()
+        main_layout.addWidget(self.sidebar_widget)
 
         # Right side layout for the rest of the UI
         right_layout = QVBoxLayout()
-
-        # Emoji Toggle Button
-        self.emoji_toggle_button = QPushButton("Emojis: OFF")
-        self.emoji_toggle_button.clicked.connect(self.toggle_emojis)
-        self.emoji_toggle_button.setStyleSheet("font-size: 18px; padding: 10px 20px; color: black;")
-        right_layout.addWidget(self.emoji_toggle_button)
-
-        # Upload Button
-        self.upload_button = QPushButton("Upload Picture")
-        self.upload_button.clicked.connect(self.upload_image)
-        self.upload_button.setStyleSheet("font-size: 18px; padding: 10px 20px; color: black;")
-        right_layout.addWidget(self.upload_button)
 
         # Background Image
         self.bg_label = QLabel(self)
         pixmap = QPixmap("/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/scrapbook.png")
         if pixmap.isNull():
             print("Failed to load background image")
-        self.bg_label.setPixmap(pixmap)
+
+        # Scale the image to 10% larger
+        original_width = pixmap.width()
+        original_height = pixmap.height()
+        scaled_width = int(original_width * 0.8)
+        scaled_height = int(original_height * 0.8)
+        scaled_pixmap = pixmap.scaled(
+            scaled_width, scaled_height,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+
+        # Set the scaled pixmap to the label
+        self.bg_label.setPixmap(scaled_pixmap)
         self.bg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        right_layout.addWidget(self.bg_label)
+        self.bg_label.setFixedSize(scaled_width, scaled_height)
+
+        # Center the background image on the screen
+        window_width = self.width()
+        window_height = self.height()
+        x = (window_width - scaled_width) // 2
+        y = (window_height - scaled_height) // 2
+        self.bg_label.move(x, y)
+
+        # Emoji Toggle Button
+        self.emoji_toggle_button = QPushButton("Emojis: OFF", self)
+        self.emoji_toggle_button.clicked.connect(self.toggle_emojis)
+        self.emoji_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        right_layout.addWidget(self.emoji_toggle_button)
+
+        # Upload Button
+        self.upload_button = QPushButton("Upload Picture", self)
+        self.upload_button.clicked.connect(self.upload_image)
+        self.upload_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        right_layout.addWidget(self.upload_button)
 
         # Lyrics Label
-        self.lyrics_label = QLabel("Waiting for lyrics...")
+        self.lyrics_label = QLabel("Waiting for lyrics...", self)
         self.lyrics_label.setWordWrap(True)
-        self.lyrics_label.setStyleSheet("font-size: 40px; font-weight: bold; color: black;")
+        self.lyrics_label.setStyleSheet("font-size: 40px; font-weight: bold; color: white; margin-top: 400px;")
         self.lyrics_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         right_layout.addWidget(self.lyrics_label)
 
         # Buttons for Lyrics Control
         button_layout = QHBoxLayout()
-        self.refresh_button = QPushButton("Refresh Lyrics")
+        self.refresh_button = QPushButton("Refresh Lyrics", self)
         self.refresh_button.clicked.connect(self.refresh_lyrics)
-        self.refresh_button.setStyleSheet("font-size: 18px; padding: 10px 20px;color: black;")
+        self.refresh_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
         button_layout.addWidget(self.refresh_button)
 
-        self.toggle_button = QPushButton("Show Full Lyrics")
+        self.toggle_button = QPushButton("Show Full Lyrics", self)
         self.toggle_button.clicked.connect(self.show_full_lyrics)
-        self.toggle_button.setStyleSheet("font-size: 18px; padding: 10px 20px;color: black;")
+        self.toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
         button_layout.addWidget(self.toggle_button)
 
         right_layout.addLayout(button_layout)
+
         main_layout.addLayout(right_layout)
+
         self.setLayout(main_layout)
+
+        # Ensure the background image is behind other widgets
+        self.bg_label.lower()
+
+        # Raise other widgets above the background image
+        self.emoji_toggle_button.raise_()
+        self.upload_button.raise_()
+        self.lyrics_label.raise_()
+        self.refresh_button.raise_()
+        self.toggle_button.raise_()
 
         # Timers
         self.lyrics_timer = QTimer()
@@ -169,17 +277,45 @@ class LyricsApp(QWidget):
 
         self.emoji_timer = QTimer()
         self.emoji_timer.timeout.connect(self.auto_generate_emoji)
-        self.emoji_timer.start(10000)  # Emoji generation every 10 seconds
+        self.emoji_timer.start(10000)
+
+    def set_selected_item(self, item):
+        """Set the currently selected item and show the sidebar."""
+        self.selected_item = item
+        self.sidebar_widget.show()  # Show the sidebar
+
+        # Update sliders based on the selected item
+        if isinstance(item, DraggableEmoji):
+            self.stacked_layout.setCurrentIndex(0)  # Show emoji slider
+            self.emoji_slider.setValue(item.font().pointSize())
+        elif isinstance(item, ResizableDraggableImage):
+            self.stacked_layout.setCurrentIndex(1)  # Show image slider
+            self.image_slider.setValue(item.width())
+
+    def update_selected_item_size(self):
+        """Update the size of the selected item based on the slider values."""
+        if self.selected_item:
+            try:
+                if isinstance(self.selected_item, DraggableEmoji):
+                    new_size = self.emoji_slider.value()
+                    self.selected_item.setFont(QFont(self.custom_font, new_size))  # Use custom font
+                    self.selected_item.setFixedSize(new_size, new_size)
+                elif isinstance(self.selected_item, ResizableDraggableImage):
+                    new_size = self.image_slider.value()
+                    self.selected_item.resize_image(new_size)
+            except RuntimeError:
+                # If the selected item has been deleted, clear the reference
+                self.selected_item = None
+                self.sidebar_widget.hide()
 
     def toggle_emojis(self):
         self.emoji_enabled = not self.emoji_enabled
         if self.emoji_enabled:
             self.emoji_toggle_button.setText("Emojis: ON")
-            self.emoji_toggle_button.setStyleSheet("font-size: 18px; padding: 10px 20px; color: black;")
+            self.emoji_toggle_button.setStyleSheet("background:white;font-size: 18px; padding: 10px 20px; color: black;")
         else:
             self.emoji_toggle_button.setText("Emojis: OFF")
-            self.emoji_toggle_button.setStyleSheet("font-size: 18px; padding: 10px 20px; color: black;")
-        self.emoji_timer.start(10000)  # Emoji generation every 10 seconds
+            self.emoji_toggle_button.setStyleSheet("background:white;font-size: 18px; padding: 10px 20px; color: black;")
 
     def upload_image(self):
         file_dialog = QFileDialog()
@@ -200,15 +336,6 @@ class LyricsApp(QWidget):
                 output_file.write(output_data)
         return output_path
 
-    def toggle_emojis(self):
-        self.emoji_enabled = not self.emoji_enabled
-        if self.emoji_enabled:
-            self.emoji_toggle_button.setText("Emojis: ON")
-            self.emoji_toggle_button.setStyleSheet("font-size: 18px; padding: 10px 20px; color: black;")
-        else:
-            self.emoji_toggle_button.setText("Emojis: OFF")
-            self.emoji_toggle_button.setStyleSheet("font-size: 18px; padding: 10px 20px; color: black;")
-        
     def refresh_lyrics(self):
         song, artist, _ = get_current_song()
         self.lyrics_dict, _ = get_lyrics(song, artist)
@@ -231,6 +358,9 @@ class LyricsApp(QWidget):
             self.lyrics_label.setText("Lyrics not found.")
 
     def auto_generate_emoji(self):
+        if not self.emoji_enabled:  # Only generate emojis if emojis are enabled
+            return
+
         sample_lyrics = self.lyrics_label.text()
         _, _, emojis = extract_lyrics_themes(sample_lyrics)
         if emojis and emojis != ["❓"]:
@@ -242,6 +372,9 @@ class LyricsApp(QWidget):
         if len(self.active_emojis) >= 15:
             old_emoji = self.active_emojis.pop(0)
             old_emoji.deleteLater()
+            if self.selected_item == old_emoji:  # Clear selected item if it was deleted
+                self.selected_item = None
+                self.sidebar_widget.hide()
 
         draggable_emoji = DraggableEmoji(self, emoji, self.emoji_size)
         draggable_emoji.show()
@@ -251,7 +384,7 @@ class LyricsApp(QWidget):
         """Update the size of emojis based on the slider value."""
         self.emoji_size = value
         for emoji in self.active_emojis:
-            emoji.setFont(QFont('Arial', self.emoji_size))
+            emoji.setFont(QFont(self.custom_font, self.emoji_size))  # Use custom font
             emoji.setFixedSize(self.emoji_size, self.emoji_size)
 
     def update_image_size(self, value):
@@ -264,6 +397,23 @@ class LyricsApp(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    
+    # Load custom font
+    font_path = "/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
+    font_id = QFontDatabase.addApplicationFont(font_path)
+    if font_id == -1:
+        print("Failed to load custom font. Falling back to Arial.")
+        custom_font = "Arial"
+    else:
+        font_families = QFontDatabase.applicationFontFamilies(font_id)
+        print(f"Available font families: {font_families}")
+        custom_font = font_families[0] if font_families else "Arial"
+        print(f"Custom font loaded: {custom_font}")
+    
+    # Set the custom font globally
+    app_font = QFont(custom_font, 12)  # Adjust size as needed
+    app.setFont(app_font)
+    
     window = LyricsApp()
     window.show()
     sys.exit(app.exec())
