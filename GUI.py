@@ -3,7 +3,7 @@ import os
 import random
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QFileDialog,
-    QHBoxLayout, QSlider, QSizeGrip, QStackedLayout, QLineEdit
+    QHBoxLayout, QSlider, QSizeGrip, QStackedLayout, QLineEdit, QInputDialog
 )
 from PyQt6.QtGui import QPixmap, QMouseEvent, QFont, QFontDatabase
 from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QPropertyAnimation
@@ -56,6 +56,7 @@ class ResizableDraggableImage(QLabel):
         self.setPixmap(self.pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio))
         self.setFixedSize(size, size)
 
+
 class DraggableEmoji(QLabel):
     def __init__(self, parent, emoji, size):
         super().__init__(parent)
@@ -79,8 +80,34 @@ class DraggableEmoji(QLabel):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         self.dragging = False
+class DraggableText(QLabel):
+    def __init__(self, parent, text, font_size):
+        super().__init__(parent)
+        self.setText(text)
+        self.setFont(QFont(parent.custom_font, font_size))
+        self.setStyleSheet("background-color: transparent; color: black;")
+        self.setGeometry(random.randint(100, 800), random.randint(100, 600), 200, 50)
+        self.dragging = False
+        self.offset = QPoint()
+        self.parent = parent  # Reference to the parent (LyricsApp)
 
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.offset = event.pos()
+            self.parent.set_selected_item(self)  # Notify parent that this item is selected
 
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self.dragging:
+            self.move(self.mapToParent(event.pos() - self.offset))
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self.dragging = False
+
+    def resize_text(self, size):
+        """Resize the text to the specified size."""
+        self.setFont(QFont(self.parent.custom_font, size))
+        self.setFixedSize(self.fontMetrics().boundingRect(self.text()).width(), self.fontMetrics().height())
 
 class LyricsApp(QWidget):
     def __init__(self):
@@ -96,7 +123,7 @@ class LyricsApp(QWidget):
         self.emoji_enabled = False
         self.selected_item = None
 
- # Load custom font
+        # Load custom font
         font_path = "/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
         font_id = QFontDatabase.addApplicationFont(font_path)
         if font_id == -1:
@@ -192,7 +219,7 @@ class LyricsApp(QWidget):
         main_layout.addWidget(self.sidebar_widget)
 
         # Right side layout for the rest of the UI
-        right_layout = QVBoxLayout()
+        right_layout = QVBoxLayout()  # Initialize right_layout here
 
         # Background Image
         self.bg_label = QLabel(self)
@@ -234,6 +261,12 @@ class LyricsApp(QWidget):
         self.upload_button.clicked.connect(self.upload_image)
         self.upload_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
         right_layout.addWidget(self.upload_button)
+
+        # Add Text Button
+        self.add_text_button = QPushButton("Add Text", self)
+        self.add_text_button.clicked.connect(self.add_text)
+        self.add_text_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        right_layout.addWidget(self.add_text_button)
 
         # Lyrics Label
         self.lyrics_label = QLabel("Waiting for lyrics...", self)
@@ -279,6 +312,14 @@ class LyricsApp(QWidget):
         self.emoji_timer.timeout.connect(self.auto_generate_emoji)
         self.emoji_timer.start(10000)
 
+    def add_text(self):
+        """Open a dialog to input text and add it to the canvas."""
+        text, ok = QInputDialog.getText(self, 'Add Text', 'Enter your text:')
+        if ok and text:
+            draggable_text = DraggableText(self, text, 30)  # Initial font size of 30
+            draggable_text.show()
+            self.set_selected_item(draggable_text)
+
     def set_selected_item(self, item):
         """Set the currently selected item and show the sidebar."""
         self.selected_item = item
@@ -291,6 +332,9 @@ class LyricsApp(QWidget):
         elif isinstance(item, ResizableDraggableImage):
             self.stacked_layout.setCurrentIndex(1)  # Show image slider
             self.image_slider.setValue(item.width())
+        elif isinstance(item, DraggableText):
+            self.stacked_layout.setCurrentIndex(0)  # Show emoji slider (reusing for text size)
+            self.emoji_slider.setValue(item.font().pointSize())
 
     def update_selected_item_size(self):
         """Update the size of the selected item based on the slider values."""
@@ -303,6 +347,9 @@ class LyricsApp(QWidget):
                 elif isinstance(self.selected_item, ResizableDraggableImage):
                     new_size = self.image_slider.value()
                     self.selected_item.resize_image(new_size)
+                elif isinstance(self.selected_item, DraggableText):
+                    new_size = self.emoji_slider.value()
+                    self.selected_item.resize_text(new_size)
             except RuntimeError:
                 # If the selected item has been deleted, clear the reference
                 self.selected_item = None
@@ -393,6 +440,7 @@ class LyricsApp(QWidget):
         for child in self.children():
             if isinstance(child, ResizableDraggableImage):
                 child.resize_image(self.image_size)
+
 
 
 if __name__ == "__main__":
