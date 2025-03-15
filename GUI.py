@@ -616,7 +616,20 @@ class LyricsApp(QWidget):
     def update_real_time_lyrics(self):
         if self.lyrics_dict:
             current_progress = get_current_song()[2]
-            closest_time = min(self.lyrics_dict, key=lambda t: abs(convert_to_seconds(t) - current_progress))
+            
+            # Convert times and filter out None values
+            valid_times = {
+                t: convert_to_seconds(t)
+                for t in self.lyrics_dict
+                if convert_to_seconds(t) is not None
+            }
+
+            if not valid_times:
+                self.lyrics_label.setText("No valid timestamps found.")
+                return
+            
+            # Find the closest time
+            closest_time = min(valid_times, key=lambda t: abs(valid_times[t] - current_progress))
             self.lyrics_label.setText(self.lyrics_dict[closest_time])
 
 
