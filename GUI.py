@@ -1,18 +1,67 @@
 import sys
 import os
 import random
+from io import BytesIO
+import requests
+from PIL import Image
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QFileDialog,
-    QHBoxLayout, QSlider, QSizeGrip, QStackedLayout, QLineEdit, QInputDialog
+    QHBoxLayout, QSlider, QStackedLayout, QLineEdit, QInputDialog, QDialog
 )
-from PyQt6.QtGui import QPixmap, QMouseEvent, QFont, QFontDatabase
-from PyQt6.QtCore import Qt, QPoint, QRect, QTimer, QPropertyAnimation
+from PyQt6.QtGui import QPixmap, QMouseEvent, QFont, QFontDatabase, QImage, QColor
+from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
+
 from rembg import remove
 from emoji_generator import extract_lyrics_themes
 from spotifylyrics import get_current_song
 from LyricsFetcher import get_lyrics, convert_to_seconds
-from PyQt6.QtWidgets import QStackedLayout
+from sticker import generate_ai_image, remove_image_background
+from spotifyalbum import fetch_current_track_data
 
+class DraggableAlbumArt(QLabel):
+    def __init__(self, parent, image_url):
+        super().__init__(parent)
+        self.image_url = image_url
+        self.load_image()
+        self.setStyleSheet("background-color: transparent; border: 1px dashed black;")
+        self.setGeometry(50, 50, 300, 300)  # Initial size (bigger)
+        self.dragging = False
+        self.offset = QPoint()
+        self.parent = parent  # Reference to the parent (LyricsApp)
+
+    def load_image(self):
+        """Load the album art image from the URL."""
+        response = requests.get(self.image_url)
+        if response.status_code == 200:
+            image_data = BytesIO(response.content)
+            self.pil_image = Image.open(image_data)
+            self.update_pixmap()
+
+    def update_pixmap(self):
+        """Update the QPixmap displayed in the label."""
+        from PIL.ImageQt import ImageQt
+        from PyQt6.QtGui import QPixmap
+        qimage = ImageQt(self.pil_image)
+        self.pixmap = QPixmap.fromImage(qimage)
+        self.setPixmap(self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio))
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.offset = event.pos()
+            self.parent.set_selected_item(self)  # Notify parent that this item is selected
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self.dragging:
+            self.move(self.mapToParent(event.pos() - self.offset))
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self.dragging = False
+
+    def resize_album_art(self, size):
+        """Resize the album art to the specified size."""
+        self.setFixedSize(size, size)
+        self.update_pixmap()
 
 class ResizableDraggableImage(QLabel):
     def __init__(self, parent, image_path):
@@ -56,6 +105,122 @@ class ResizableDraggableImage(QLabel):
         self.setPixmap(self.pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio))
         self.setFixedSize(size, size)
 
+    def remove_background(self, image_path):
+            output_path = os.path.join(os.path.dirname(image_path), "removed_bg.png")
+            with open(image_path, "rb") as input_file:
+                input_data = input_file.read()
+                output_data = remove(input_data)
+                with open(output_path, "wb") as output_file:
+                    output_file.write(output_data)
+            return output_path
+
+class DraggableAISticker(QLabel):
+    def __init__(self, parent, prompt):
+        super().__init__(parent)
+        self.prompt = prompt
+        self.sticker_image = self.generate_sticker(prompt)  # Get the PIL.Image object
+        if self.sticker_image:
+            self.pixmap = self._pil_to_pixmap(self.sticker_image)  # Convert PIL.Image to QPixmap
+            if self.pixmap.isNull():
+                print(f"Failed to load sticker from generated image.")
+            else:
+                self.setPixmap(self.pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio))
+                self.setStyleSheet("background-color: transparent; border: 1px dashed black;")
+                self.setGeometry(50, 50, 100, 100)
+                self.dragging = False
+                self.offset = QPoint()
+                self.show_border = True  # Toggle for dashed border
+                self.parent = parent  # Reference to the parent (LyricsApp)
+        else:
+            print("Failed to generate AI sticker.")
+
+    def generate_sticker(self, prompt):
+        """Generates an AI sticker and returns the PIL.Image object."""
+        # Generate AI image
+        ai_image = generate_ai_image(prompt)
+        if ai_image:
+            # Remove background
+            bg_removed_image = remove_image_background(ai_image)
+            return bg_removed_image  # Return the PIL.Image object
+        return None
+
+    def _pil_to_pixmap(self, pil_image):
+        """Converts a PIL.Image to a QPixmap."""
+        from PIL.ImageQt import ImageQt
+        from PyQt6.QtGui import QPixmap
+        qimage = ImageQt(pil_image)
+        return QPixmap.fromImage(qimage)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.offset = event.pos()
+            self.toggle_border()
+            self.parent.set_selected_item(self)  # Notify parent that this item is selected
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self.dragging:
+            self.move(self.mapToParent(event.pos() - self.offset))
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self.dragging = False
+
+    def toggle_border(self):
+        """Toggle the dashed border on and off."""
+        self.show_border = not self.show_border
+        if self.show_border:
+            self.setStyleSheet("background-color: transparent; border: 1px dashed black;")
+        else:
+            self.setStyleSheet("background-color: transparent; border: none;")
+
+    def resize_sticker(self, size):
+        """Resize the sticker to the specified size."""
+        if hasattr(self, 'pixmap'):
+            self.setPixmap(self.pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio))
+            self.setFixedSize(size, size)
+
+    def generate_sticker(self, prompt):
+        """Generates an AI sticker and saves it to the output directory."""
+        output_dir = "generated_stickers"
+        os.makedirs(output_dir, exist_ok=True)
+        file_path = os.path.join(output_dir, f"{prompt.replace(' ', '_')}.png")
+
+        # Generate AI image
+        ai_image = generate_ai_image(prompt)
+        if ai_image:
+            # Remove background
+            bg_removed_image = remove_image_background(ai_image)
+            bg_removed_image.save(file_path)
+            return file_path
+        return None
+
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.offset = event.pos()
+            self.toggle_border()
+            self.parent.set_selected_item(self)  # Notify parent that this item is selected
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self.dragging:
+            self.move(self.mapToParent(event.pos() - self.offset))
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        self.dragging = False
+
+    def toggle_border(self):
+        """Toggle the dashed border on and off."""
+        self.show_border = not self.show_border
+        if self.show_border:
+            self.setStyleSheet("background-color: transparent; border: 1px dashed black;")
+        else:
+            self.setStyleSheet("background-color: transparent; border: none;")
+
+    def resize_sticker(self, size):
+        """Resize the sticker to the specified size."""
+        if hasattr(self, 'pixmap'):
+            self.setPixmap(self.pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio))
+            self.setFixedSize(size, size)
 
 class DraggableEmoji(QLabel):
     def __init__(self, parent, emoji, size):
@@ -112,15 +277,18 @@ class DraggableText(QLabel):
 class LyricsApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Spotify Lyrics Fetcher with Image Upload")
+        self.setWindowTitle("Spotify Lyrics Fetcher with Image Upload and AI Stickers")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent;")
         self.active_emojis = []
+        self.active_stickers = []
         self.lyrics_dict = {}
         self.scrapbook_area = QRect(100, 100, 800, 600)
         self.emoji_size = 50
         self.image_size = 100
+        self.sticker_size = 100
         self.emoji_enabled = False
+        self.sticker_enabled = False
         self.selected_item = None
 
         # Load custom font
@@ -208,6 +376,33 @@ class LyricsApp(QWidget):
         image_slider_widget.setLayout(image_slider_layout)
         self.stacked_layout.addWidget(image_slider_widget)
 
+        # Slider for sticker size
+        self.sticker_slider = QSlider(Qt.Orientation.Vertical)
+        self.sticker_slider.setMinimum(20)
+        self.sticker_slider.setMaximum(200)
+        self.sticker_slider.setValue(self.sticker_size)
+        self.sticker_slider.valueChanged.connect(self.update_selected_item_size)
+        self.sticker_slider.setStyleSheet("""
+            QSlider::groove:vertical {
+                background: white;
+                width: 10px;
+                border-radius: 5px;
+            }
+            QSlider::handle:vertical {
+                background: black;
+                width: 20px;
+                height: 20px;
+                margin: -5px 0;
+                border-radius: 10px;
+            }
+        """)
+        sticker_slider_widget = QWidget()
+        sticker_slider_layout = QVBoxLayout()
+        sticker_slider_layout.addWidget(QLabel("Sticker Size"))
+        sticker_slider_layout.addWidget(self.sticker_slider)
+        sticker_slider_widget.setLayout(sticker_slider_layout)
+        self.stacked_layout.addWidget(sticker_slider_widget)
+
         # Add stacked layout to left layout
         self.left_layout.addLayout(self.stacked_layout)
 
@@ -219,7 +414,7 @@ class LyricsApp(QWidget):
         main_layout.addWidget(self.sidebar_widget)
 
         # Right side layout for the rest of the UI
-        right_layout = QVBoxLayout()  # Initialize right_layout here
+        right_layout = QVBoxLayout()
 
         # Background Image
         self.bg_label = QLabel(self)
@@ -255,6 +450,12 @@ class LyricsApp(QWidget):
         self.emoji_toggle_button.clicked.connect(self.toggle_emojis)
         self.emoji_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
         right_layout.addWidget(self.emoji_toggle_button)
+
+        # AI Sticker Toggle Button
+        self.sticker_toggle_button = QPushButton("AI Stickers: OFF", self)
+        self.sticker_toggle_button.clicked.connect(self.toggle_stickers)
+        self.sticker_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        right_layout.addWidget(self.sticker_toggle_button)
 
         # Upload Button
         self.upload_button = QPushButton("Upload Picture", self)
@@ -298,6 +499,7 @@ class LyricsApp(QWidget):
 
         # Raise other widgets above the background image
         self.emoji_toggle_button.raise_()
+        self.sticker_toggle_button.raise_()
         self.upload_button.raise_()
         self.lyrics_label.raise_()
         self.refresh_button.raise_()
@@ -312,6 +514,9 @@ class LyricsApp(QWidget):
         self.emoji_timer.timeout.connect(self.auto_generate_emoji)
         self.emoji_timer.start(10000)
 
+        self.sticker_timer = QTimer()
+        self.sticker_timer.timeout.connect(self.auto_generate_sticker)
+        self.sticker_timer.start(15000)
     def add_text(self):
         """Open a dialog to input text and add it to the canvas."""
         text, ok = QInputDialog.getText(self, 'Add Text', 'Enter your text:')
@@ -320,10 +525,42 @@ class LyricsApp(QWidget):
             draggable_text.show()
             self.set_selected_item(draggable_text)
 
+    def toggle_emojis(self):
+        """Toggle emoji generation on and off."""
+        self.emoji_enabled = not self.emoji_enabled
+        if self.emoji_enabled:
+            self.emoji_toggle_button.setText("Emojis: ON")
+            self.emoji_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        else:
+            self.emoji_toggle_button.setText("Emojis: OFF")
+            self.emoji_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+
+    def toggle_stickers(self):
+        """Toggle AI sticker generation on and off."""
+        self.sticker_enabled = not self.sticker_enabled
+        if self.sticker_enabled:
+            self.sticker_toggle_button.setText("AI Stickers: ON")
+            self.sticker_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        else:
+            self.sticker_toggle_button.setText("AI Stickers: OFF")
+            self.sticker_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+
+    def auto_generate_sticker(self):
+        """Automatically generate AI stickers based on lyrics."""
+        if not self.sticker_enabled:
+            return
+
+        sample_lyrics = self.lyrics_label.text()
+        if sample_lyrics and sample_lyrics != "Waiting for lyrics...":
+            ai_sticker = DraggableAISticker(self, sample_lyrics)
+            ai_sticker.show()
+            self.active_stickers.append(ai_sticker)
+            self.set_selected_item(ai_sticker)
+
     def set_selected_item(self, item):
         """Set the currently selected item and show the sidebar."""
         self.selected_item = item
-        self.sidebar_widget.show()  # Show the sidebar
+        self.sidebar_widget.show()
 
         # Update sliders based on the selected item
         if isinstance(item, DraggableEmoji):
@@ -335,6 +572,9 @@ class LyricsApp(QWidget):
         elif isinstance(item, DraggableText):
             self.stacked_layout.setCurrentIndex(0)  # Show emoji slider (reusing for text size)
             self.emoji_slider.setValue(item.font().pointSize())
+        elif isinstance(item, DraggableAISticker):
+            self.stacked_layout.setCurrentIndex(2)  # Show sticker slider
+            self.sticker_slider.setValue(item.width())
 
     def update_selected_item_size(self):
         """Update the size of the selected item based on the slider values."""
@@ -342,7 +582,7 @@ class LyricsApp(QWidget):
             try:
                 if isinstance(self.selected_item, DraggableEmoji):
                     new_size = self.emoji_slider.value()
-                    self.selected_item.setFont(QFont(self.custom_font, new_size))  # Use custom font
+                    self.selected_item.setFont(QFont(self.custom_font, new_size))
                     self.selected_item.setFixedSize(new_size, new_size)
                 elif isinstance(self.selected_item, ResizableDraggableImage):
                     new_size = self.image_slider.value()
@@ -350,52 +590,13 @@ class LyricsApp(QWidget):
                 elif isinstance(self.selected_item, DraggableText):
                     new_size = self.emoji_slider.value()
                     self.selected_item.resize_text(new_size)
+                elif isinstance(self.selected_item, DraggableAISticker):
+                    new_size = self.sticker_slider.value()
+                    self.selected_item.resize_sticker(new_size)
             except RuntimeError:
                 # If the selected item has been deleted, clear the reference
                 self.selected_item = None
                 self.sidebar_widget.hide()
-
-    def toggle_emojis(self):
-        self.emoji_enabled = not self.emoji_enabled
-        if self.emoji_enabled:
-            self.emoji_toggle_button.setText("Emojis: ON")
-            self.emoji_toggle_button.setStyleSheet("background:white;font-size: 18px; padding: 10px 20px; color: black;")
-        else:
-            self.emoji_toggle_button.setText("Emojis: OFF")
-            self.emoji_toggle_button.setStyleSheet("background:white;font-size: 18px; padding: 10px 20px; color: black;")
-
-    def upload_image(self):
-        file_dialog = QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.xpm *.jpg *.jpeg)")
-
-        if file_path:
-            output_path = self.remove_background(file_path)
-            draggable_image = ResizableDraggableImage(self, output_path)
-            draggable_image.resize_image(self.image_size)
-            draggable_image.show()
-
-    def remove_background(self, image_path):
-        output_path = os.path.join(os.path.dirname(image_path), "removed_bg.png")
-        with open(image_path, "rb") as input_file:
-            input_data = input_file.read()
-            output_data = remove(input_data)
-            with open(output_path, "wb") as output_file:
-                output_file.write(output_data)
-        return output_path
-
-    def refresh_lyrics(self):
-        song, artist, _ = get_current_song()
-        self.lyrics_dict, _ = get_lyrics(song, artist)
-        if self.lyrics_dict:
-            self.lyrics_label.setText("🎵...")
-        else:
-            self.lyrics_label.setText("Lyrics not found.")
-
-    def update_real_time_lyrics(self):
-        if self.lyrics_dict:
-            current_progress = get_current_song()[2]
-            closest_time = min(self.lyrics_dict, key=lambda t: abs(convert_to_seconds(t) - current_progress))
-            self.lyrics_label.setText(self.lyrics_dict[closest_time])
 
     def show_full_lyrics(self):
         if self.lyrics_dict:
@@ -403,6 +604,21 @@ class LyricsApp(QWidget):
             self.lyrics_label.setText(full_lyrics)
         else:
             self.lyrics_label.setText("Lyrics not found.")
+
+    def refresh_lyrics(self):
+            song, artist, _ = get_current_song()
+            self.lyrics_dict, _ = get_lyrics(song, artist)
+            if self.lyrics_dict:
+                self.lyrics_label.setText("🎵...")
+            else:
+                self.lyrics_label.setText("Lyrics not found.")
+    
+    def update_real_time_lyrics(self):
+        if self.lyrics_dict:
+            current_progress = get_current_song()[2]
+            closest_time = min(self.lyrics_dict, key=lambda t: abs(convert_to_seconds(t) - current_progress))
+            self.lyrics_label.setText(self.lyrics_dict[closest_time])
+
 
     def auto_generate_emoji(self):
         if not self.emoji_enabled:  # Only generate emojis if emojis are enabled
@@ -427,6 +643,17 @@ class LyricsApp(QWidget):
         draggable_emoji.show()
         self.active_emojis.append(draggable_emoji)
 
+    def upload_image(self):
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getOpenFileName(self, "Open Image", "", "Images (*.png *.xpm *.jpg *.jpeg)")
+
+        if file_path:
+            output_path = self.remove_background(file_path)
+            draggable_image = ResizableDraggableImage(self, output_path)
+            draggable_image.resize_image(self.image_size)
+            draggable_image.show()
+
+
     def update_emoji_size(self, value):
         """Update the size of emojis based on the slider value."""
         self.emoji_size = value
@@ -440,8 +667,6 @@ class LyricsApp(QWidget):
         for child in self.children():
             if isinstance(child, ResizableDraggableImage):
                 child.resize_image(self.image_size)
-
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
