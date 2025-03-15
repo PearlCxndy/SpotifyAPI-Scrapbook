@@ -2,13 +2,17 @@ import sys
 import os
 import random
 from io import BytesIO
-import requests
-from PIL import Image
+import cv2
+
+from PIL import Image, ImageQt
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QFileDialog,
     QHBoxLayout, QSlider, QStackedLayout, QLineEdit, QInputDialog, QDialog
 )
-from PyQt6.QtGui import QPixmap, QMouseEvent, QFont, QFontDatabase, QImage, QColor
+
+
+
+from PyQt6.QtGui import QPixmap, QMouseEvent, QFont, QFontDatabase, QImage, QColor,QFontDatabase, QImage, QPainter
 from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
 
 from rembg import remove
@@ -16,52 +20,10 @@ from emoji_generator import extract_lyrics_themes
 from spotifylyrics import get_current_song
 from LyricsFetcher import get_lyrics, convert_to_seconds
 from sticker import generate_ai_image, remove_image_background
-from spotifyalbum import fetch_current_track_data
+# from spotifyalbum import fetch_current_track_data
+from drawingcanvas import HandDrawingCanvas
 
-class DraggableAlbumArt(QLabel):
-    def __init__(self, parent, image_url):
-        super().__init__(parent)
-        self.image_url = image_url
-        self.load_image()
-        self.setStyleSheet("background-color: transparent; border: 1px dashed black;")
-        self.setGeometry(50, 50, 300, 300)  # Initial size (bigger)
-        self.dragging = False
-        self.offset = QPoint()
-        self.parent = parent  # Reference to the parent (LyricsApp)
 
-    def load_image(self):
-        """Load the album art image from the URL."""
-        response = requests.get(self.image_url)
-        if response.status_code == 200:
-            image_data = BytesIO(response.content)
-            self.pil_image = Image.open(image_data)
-            self.update_pixmap()
-
-    def update_pixmap(self):
-        """Update the QPixmap displayed in the label."""
-        from PIL.ImageQt import ImageQt
-        from PyQt6.QtGui import QPixmap
-        qimage = ImageQt(self.pil_image)
-        self.pixmap = QPixmap.fromImage(qimage)
-        self.setPixmap(self.pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio))
-
-    def mousePressEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.dragging = True
-            self.offset = event.pos()
-            self.parent.set_selected_item(self)  # Notify parent that this item is selected
-
-    def mouseMoveEvent(self, event: QMouseEvent):
-        if self.dragging:
-            self.move(self.mapToParent(event.pos() - self.offset))
-
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        self.dragging = False
-
-    def resize_album_art(self, size):
-        """Resize the album art to the specified size."""
-        self.setFixedSize(size, size)
-        self.update_pixmap()
 
 class ResizableDraggableImage(QLabel):
     def __init__(self, parent, image_path):
@@ -237,7 +199,7 @@ class DraggableEmoji(QLabel):
         if event.button() == Qt.MouseButton.LeftButton:
             self.dragging = True
             self.offset = event.pos()
-            self.parent.set_selected_item(self)  # Notify parent that this item is selected
+            self.parent.set_selected_item(self) 
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.dragging:
@@ -273,6 +235,17 @@ class DraggableText(QLabel):
         """Resize the text to the specified size."""
         self.setFont(QFont(self.parent.custom_font, size))
         self.setFixedSize(self.fontMetrics().boundingRect(self.text()).width(), self.fontMetrics().height())
+
+class HandDrawingCanvas:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+
+    def process_frame(self, frame):
+        """Process the webcam frame (e.g., apply drawing or effects)."""
+        # Example: Draw a red rectangle on the frame
+        cv2.rectangle(frame, (50, 50), (200, 200), (0, 0, 255), 2)
+        return frame
 
 class LyricsApp(QWidget):
     def __init__(self):
@@ -314,12 +287,13 @@ class LyricsApp(QWidget):
         self.left_layout = QVBoxLayout()
         self.left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+
         # Label for combined sliders
         resize_label = QLabel("Resize Controls")
         resize_label.setStyleSheet("font-size: 16px; font-weight: bold; color: black;")
         self.left_layout.addWidget(resize_label)
 
-        # Stacked layout for sliders
+
         self.stacked_layout = QStackedLayout()
 
         # Slider for emoji size
@@ -347,7 +321,7 @@ class LyricsApp(QWidget):
         emoji_slider_layout.addWidget(QLabel("Emoji Size"))
         emoji_slider_layout.addWidget(self.emoji_slider)
         emoji_slider_widget.setLayout(emoji_slider_layout)
-        self.stacked_layout.addWidget(emoji_slider_widget)
+        self.left_layout.addWidget(emoji_slider_widget)
 
         # Slider for image size
         self.image_slider = QSlider(Qt.Orientation.Vertical)
@@ -374,7 +348,7 @@ class LyricsApp(QWidget):
         image_slider_layout.addWidget(QLabel("Image Size"))
         image_slider_layout.addWidget(self.image_slider)
         image_slider_widget.setLayout(image_slider_layout)
-        self.stacked_layout.addWidget(image_slider_widget)
+        self.left_layout.addWidget(image_slider_widget)
 
         # Slider for sticker size
         self.sticker_slider = QSlider(Qt.Orientation.Vertical)
@@ -401,7 +375,7 @@ class LyricsApp(QWidget):
         sticker_slider_layout.addWidget(QLabel("Sticker Size"))
         sticker_slider_layout.addWidget(self.sticker_slider)
         sticker_slider_widget.setLayout(sticker_slider_layout)
-        self.stacked_layout.addWidget(sticker_slider_widget)
+        self.left_layout.addWidget(sticker_slider_widget)
 
         # Add stacked layout to left layout
         self.left_layout.addLayout(self.stacked_layout)
@@ -409,7 +383,7 @@ class LyricsApp(QWidget):
         # Add left layout to main layout (hidden by default)
         self.sidebar_widget = QWidget()
         self.sidebar_widget.setLayout(self.left_layout)
-        self.sidebar_widget.setFixedWidth(120)  # Make the sidebar more compact
+        self.sidebar_widget.setFixedWidth(120)
         self.sidebar_widget.hide()
         main_layout.addWidget(self.sidebar_widget)
 
@@ -445,36 +419,32 @@ class LyricsApp(QWidget):
         y = (window_height - scaled_height) // 2
         self.bg_label.move(x, y)
 
-        # Emoji Toggle Button
-        self.emoji_toggle_button = QPushButton("Emojis: OFF", self)
-        self.emoji_toggle_button.clicked.connect(self.toggle_emojis)
-        self.emoji_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
-        right_layout.addWidget(self.emoji_toggle_button)
+        # --- Create a container widget for the buttons ---
+        self.button_container = QWidget(self)
+        self.button_container.setFixedSize(200, 200)
+        self.button_container.setStyleSheet("background: rgba(255, 255, 255, 0);")
+        self.button_container.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        # AI Sticker Toggle Button
-        self.sticker_toggle_button = QPushButton("AI Stickers: OFF", self)
-        self.sticker_toggle_button.clicked.connect(self.toggle_stickers)
-        self.sticker_toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
-        right_layout.addWidget(self.sticker_toggle_button)
+        # Button layout
+        self.button_layout = QVBoxLayout()
+        self.button_layout.setContentsMargins(0, 0, 0, 0)
+        self.button_container.setLayout(self.button_layout)
 
-        # Upload Button
-        self.upload_button = QPushButton("Upload Picture", self)
-        self.upload_button.clicked.connect(self.upload_image)
-        self.upload_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
-        right_layout.addWidget(self.upload_button)
+        # Position the button container at the top-right corner
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        button_x = screen_geometry.width() - self.button_container.width() - 20
+        button_y = 20
+        self.button_container.move(button_x, button_y)
 
-        # Add Text Button
-        self.add_text_button = QPushButton("Add Text", self)
-        self.add_text_button.clicked.connect(self.add_text)
-        self.add_text_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
-        right_layout.addWidget(self.add_text_button)
-
-        # Lyrics Label
+        # --- Lyrics Label ---
         self.lyrics_label = QLabel("Waiting for lyrics...", self)
-        self.lyrics_label.setWordWrap(True)
-        self.lyrics_label.setStyleSheet("font-size: 40px; font-weight: bold; color: white; margin-top: 400px;")
+        self.lyrics_label.setWordWrap(True)  # Enable word wrap for long lyrics
+        self.lyrics_label.setStyleSheet("font-size: 40px; font-weight: bold; color: white;")
         self.lyrics_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Add the lyrics label to the right layout
         right_layout.addWidget(self.lyrics_label)
+
 
         # Buttons for Lyrics Control
         button_layout = QHBoxLayout()
@@ -490,20 +460,71 @@ class LyricsApp(QWidget):
 
         right_layout.addLayout(button_layout)
 
-        main_layout.addLayout(right_layout)
+        # Add buttons to the container
+        self.emoji_toggle_button = QPushButton("Emojis: OFF", self.button_container)
+        self.emoji_toggle_button.clicked.connect(self.toggle_emojis)
+        self.emoji_toggle_button.setStyleSheet("background: white; font-size: 12px; padding: 5px; color: black;")
+        self.button_layout.addWidget(self.emoji_toggle_button)
 
-        self.setLayout(main_layout)
+        self.sticker_toggle_button = QPushButton("AI Stickers: OFF", self.button_container)
+        self.sticker_toggle_button.clicked.connect(self.toggle_stickers)
+        self.sticker_toggle_button.setStyleSheet("background: white; font-size: 12px; padding: 5px; color: black;")
+        self.button_layout.addWidget(self.sticker_toggle_button)
 
-        # Ensure the background image is behind other widgets
-        self.bg_label.lower()
+        self.upload_button = QPushButton("Upload Picture", self.button_container)
+        self.upload_button.clicked.connect(self.upload_image)
+        self.upload_button.setStyleSheet("background: white; font-size: 12px; padding: 5px; color: black;")
+        self.button_layout.addWidget(self.upload_button)
 
-        # Raise other widgets above the background image
+        self.add_text_button = QPushButton("Add Text", self.button_container)
+        self.add_text_button.clicked.connect(self.add_text)
+        self.add_text_button.setStyleSheet("background: white; font-size: 12px; padding: 5px; color: black;")
+        self.button_layout.addWidget(self.add_text_button)
+
+        # Ensure the buttons are clickable
+        self.button_container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.emoji_toggle_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.sticker_toggle_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.upload_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.add_text_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+
+        # Raise the buttons to ensure they are on top
+        self.button_container.raise_()
         self.emoji_toggle_button.raise_()
         self.sticker_toggle_button.raise_()
         self.upload_button.raise_()
-        self.lyrics_label.raise_()
-        self.refresh_button.raise_()
-        self.toggle_button.raise_()
+        self.add_text_button.raise_()
+
+        # Initialize the drawing canvas
+        self.drawing_canvas = HandDrawingCanvas(600, 600)
+
+         # --- Create Webcam Label for Display ---
+        self.webcam_label = QLabel(self)
+        self.webcam_label.setFixedSize(300, 250)  # Set a fixed size for the webcam feed
+        self.webcam_label.setStyleSheet("border: 2px solid black; background-color: black;")
+
+        # Position the webcam label at the far right side of the screen
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        webcam_x = (screen_geometry.width() - self.webcam_label.width()) - 50  # Align to the right
+        webcam_y = (screen_geometry.height() - self.webcam_label.height()) - 100  # Align to the bottom
+        self.webcam_label.move(webcam_x, webcam_y)
+        self.webcam_label.raise_()  # Ensure it appears on top of other widgets
+
+        # Initialize Webcam
+        self.capture = cv2.VideoCapture(0)
+        if not self.capture.isOpened():
+            print("⚠️ Webcam not accessible!")
+
+        # Timer to update webcam feed
+        self.webcam_timer = QTimer()
+        self.webcam_timer.timeout.connect(self.update_webcam_feed)
+        self.webcam_timer.start(30)
+
+        # Add the right layout to the main layout
+        main_layout.addLayout(right_layout)
+
+        # Set the main layout for the window
+        self.setLayout(main_layout)
 
         # Timers
         self.lyrics_timer = QTimer()
@@ -517,6 +538,33 @@ class LyricsApp(QWidget):
         self.sticker_timer = QTimer()
         self.sticker_timer.timeout.connect(self.auto_generate_sticker)
         self.sticker_timer.start(15000)
+
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress:
+            print(f"Mouse press at: {event.pos()}")
+        return super().eventFilter(obj, event)
+
+        # Install event filter on the main window
+        self.installEventFilter(self)
+
+    def update_webcam_feed(self):
+        """Capture, process, and display the webcam feed."""
+        ret, frame = self.capture.read()
+        if ret:
+            # Resize the frame to match the webcam_label size (400x300)
+            frame = cv2.resize(frame, (self.webcam_label.width(), self.webcam_label.height()))
+
+            # Process the frame through the drawing canvas (if needed)
+            processed_frame = self.drawing_canvas.process_frame(frame)
+
+            # Convert the processed frame to RGB format
+            processed_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = processed_frame.shape
+            bytes_per_line = ch * w
+            convert_to_Qt_format = QImage(processed_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+            self.webcam_label.setPixmap(QPixmap.fromImage(convert_to_Qt_format))
+
     def add_text(self):
         """Open a dialog to input text and add it to the canvas."""
         text, ok = QInputDialog.getText(self, 'Add Text', 'Enter your text:')
@@ -597,40 +645,92 @@ class LyricsApp(QWidget):
                 # If the selected item has been deleted, clear the reference
                 self.selected_item = None
                 self.sidebar_widget.hide()
-
     def show_full_lyrics(self):
+        """Show full lyrics in a popup window."""
         if self.lyrics_dict:
             full_lyrics = "\n".join(self.lyrics_dict.values())
-            self.lyrics_label.setText(full_lyrics)
         else:
-            self.lyrics_label.setText("Lyrics not found.")
+            full_lyrics = "Lyrics not found."
+
+        # Create the dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Full Lyrics")
+        dialog.setFixedSize(600, 400)
+
+        # Add lyrics to the dialog
+        lyrics_label = QLabel(full_lyrics, dialog)
+        lyrics_label.setWordWrap(True)
+        lyrics_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        lyrics_label.setStyleSheet("font-size: 16px; padding: 10px;")
+        
+        # Layout for the dialog
+        layout = QVBoxLayout()
+        layout.addWidget(lyrics_label)
+        dialog.setLayout(layout)
+
+        # Show the dialog
+        dialog.exec()
+
 
     def refresh_lyrics(self):
-            song, artist, _ = get_current_song()
-            self.lyrics_dict, _ = get_lyrics(song, artist)
-            if self.lyrics_dict:
-                self.lyrics_label.setText("🎵...")
-            else:
-                self.lyrics_label.setText("Lyrics not found.")
-    
-    def update_real_time_lyrics(self):
-        if self.lyrics_dict:
-            current_progress = get_current_song()[2]
-            
-            # Convert times and filter out None values
-            valid_times = {
-                t: convert_to_seconds(t)
-                for t in self.lyrics_dict
-                if convert_to_seconds(t) is not None
-            }
+        # Use the actual Spotify API to get the current song and artist
+        song_info = get_current_song()
 
-            if not valid_times:
-                self.lyrics_label.setText("No valid timestamps found.")
-                return
-            
-            # Find the closest time
-            closest_time = min(valid_times, key=lambda t: abs(valid_times[t] - current_progress))
-            self.lyrics_label.setText(self.lyrics_dict[closest_time])
+        # Ensure song_info is valid and contains necessary data
+        if not song_info or not song_info[0] or not song_info[1]:
+            self.lyrics_label.setText("No song playing or song data unavailable.")
+            return
+
+        song, artist = song_info[:2]
+
+        # Avoid searching for placeholder song data
+        if song == "No song playing" or artist == "Unknown Artist":
+            self.lyrics_label.setText("No song playing or song data unavailable.")
+            return
+
+        # Fetch lyrics
+        lyrics_result = get_lyrics(song, artist)
+
+        # Check if lyrics were found
+        if lyrics_result:
+            self.lyrics_dict, _ = lyrics_result
+            combined_lyrics = "\n".join(self.lyrics_dict.values()) if self.lyrics_dict else "No lyrics available."
+            self.lyrics_label.setText(combined_lyrics)
+        else:
+            self.lyrics_dict = {}
+            self.lyrics_label.setText("No lyrics available.")
+
+
+
+    def update_real_time_lyrics(self):
+        # Check if lyrics dictionary is populated
+        if not self.lyrics_dict:
+            return
+
+        # Get current song progress from Spotify
+        current_song = get_current_song()
+
+        # Validate song information
+        if not current_song or current_song[0] == "No song playing":
+            return
+
+        current_progress = current_song[2]
+
+        # Convert and validate times
+        valid_times = {
+            t: convert_to_seconds(t)
+            for t in self.lyrics_dict
+            if convert_to_seconds(t) is not None
+        }
+
+        if not valid_times:
+            self.lyrics_label.setText("No valid timestamps found.")
+            return
+
+        # Find the closest time and update the lyrics label
+        closest_time = min(valid_times, key=lambda t: abs(valid_times[t] - current_progress))
+        self.lyrics_label.setText(self.lyrics_dict[closest_time])
+
 
 
     def auto_generate_emoji(self):
@@ -680,6 +780,28 @@ class LyricsApp(QWidget):
         for child in self.children():
             if isinstance(child, ResizableDraggableImage):
                 child.resize_image(self.image_size)
+
+    def cleanup_resources(self):
+        """Ensure webcam is released on app exit."""
+        if self.capture.isOpened():
+            self.capture.release()
+            print("Webcam resource released.")
+
+    def closeEvent(self, event):
+        """Release webcam resources upon closing the window."""
+        self.cleanup_resources()
+        event.accept()
+        
+    def remove_background(self, image_path):
+        """Removes the background from the given image and returns the output path."""
+        output_path = os.path.join(os.path.dirname(image_path), "removed_bg.png")
+        with open(image_path, "rb") as input_file:
+            input_data = input_file.read()
+            output_data = remove(input_data)
+            with open(output_path, "wb") as output_file:
+                output_file.write(output_data)
+        return output_path
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
