@@ -2,48 +2,36 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from dorothy import Dorothy
+from PyQt6.QtGui import QColor
 
 class HandDrawingCanvas:
     def __init__(self, width=600, height=600):
-        # Initialize Dorothy
-        self.dorothy = Dorothy()
         self.width = width
         self.height = height
-        self.canvas = self.dorothy.get_layer()
+        self.color = (255, 0, 0)
+        self.brush_thickness = 7
+        self.prev_x, self.prev_y = None, None
+        self.drawing = False
+
+        # Initialize Dorothy and manually create the canvas layer
+        self.dorothy = Dorothy()
+        self.canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        self.dorothy.set_stroke_weight(self.brush_thickness)
+        self.dorothy.stroke(self.color)
 
         # Mediapipe Hand Detection
         self.mp_hands = mp.solutions.hands
         self.hands = self.mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5, max_num_hands=1)
         self.mp_draw = mp.solutions.drawing_utils
 
-        # Drawing Attributes
-        self.color = self.dorothy.red
-        self.drawing = False
-        self.prev_x, self.prev_y = None, None
-        self.brush_thickness = 7
-
-        # Initialize stroke style
-        self.dorothy.stroke(self.color)
-        self.dorothy.set_stroke_weight(self.brush_thickness)
-
     def draw_dorothy_brush(self, x, y):
         """Draw using Dorothy's API with smooth and constant strokes."""
         if self.prev_x is not None and self.prev_y is not None:
-            # Draw a continuous line
-            self.dorothy.line(
-                pt1=(self.prev_x, self.prev_y),
-                pt2=(x, y),
-                layer=self.canvas
-            )
+            self.dorothy.line(pt1=(self.prev_x, self.prev_y), pt2=(x, y), layer=self.canvas)
         else:
-            # Draw a starting point circle
-            self.dorothy.circle(
-                centre=(x, y),
-                radius=self.brush_thickness // 2,
-                layer=self.canvas
-            )
-
+            self.dorothy.circle(centre=(x, y), radius=self.brush_thickness // 2, layer=self.canvas)
         self.prev_x, self.prev_y = x, y
+        self.dorothy.update_canvas()
 
     def process_frame(self, frame):
         """Process each frame for hand detection and drawing."""
@@ -65,32 +53,28 @@ class HandDrawingCanvas:
             self.drawing = False
             self.prev_x, self.prev_y = None, None
 
-        # Render the Dorothy layers onto the canvas
-        self.dorothy.update_canvas()
-
-        # Convert Dorothy's canvas to OpenCV image and blend it
-        dorothy_canvas = self.dorothy.canvas
-        if dorothy_canvas.shape != frame.shape:
-            dorothy_canvas = cv2.resize(dorothy_canvas, (frame.shape[1], frame.shape[0]))
-
-        output = cv2.addWeighted(frame, 0.3, dorothy_canvas, 0.7, 0)
+        # Ensure canvas matches frame size
+        dorothy_canvas = cv2.resize(self.canvas, (frame.shape[1], frame.shape[0]))
+        output = cv2.addWeighted(frame, 0.7, dorothy_canvas, 0.3, 0)
         return output
 
     def clear_canvas(self):
-        """Clears the Dorothy canvas."""
-        self.canvas = self.dorothy.get_layer()
-        self.dorothy.update_canvas()
+        """Clear Dorothy's canvas."""
+        self.canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
 
     def set_color(self, new_color):
-        """Sets a new drawing color."""
-        self.color = new_color
+        """Set a new drawing color."""
+        if isinstance(new_color, QColor):
+            self.color = (new_color.red(), new_color.green(), new_color.blue())
+        else:
+            self.color = new_color
         self.dorothy.stroke(self.color)
 
     def set_brush_thickness(self, thickness):
-        """Sets a new brush thickness."""
+        """Set a new brush thickness."""
         self.brush_thickness = thickness
         self.dorothy.set_stroke_weight(self.brush_thickness)
 
     def get_canvas(self):
-        """Returns the current canvas."""
-        return self.dorothy.canvas
+        """Return the current canvas."""
+        return self.canvas

@@ -236,16 +236,16 @@ class DraggableText(QLabel):
         self.setFont(QFont(self.parent.custom_font, size))
         self.setFixedSize(self.fontMetrics().boundingRect(self.text()).width(), self.fontMetrics().height())
 
-class HandDrawingCanvas:
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
+# class HandDrawingCanvas:
+#     def __init__(self, width, height):
+#         self.width = width
+#         self.height = height
 
-    def process_frame(self, frame):
-        """Process the webcam frame (e.g., apply drawing or effects)."""
-        # Example: Draw a red rectangle on the frame
-        cv2.rectangle(frame, (50, 50), (200, 200), (0, 0, 255), 2)
-        return frame
+#     def process_frame(self, frame):
+#         """Process the webcam frame (e.g., apply drawing or effects)."""
+#         # Example: Draw a red rectangle on the frame
+#         cv2.rectangle(frame, (50, 50), (200, 200), (0, 0, 255), 2)
+#         return frame
 
 class LyricsApp(QWidget):
     def __init__(self):
@@ -280,12 +280,21 @@ class LyricsApp(QWidget):
         screen_geometry = QApplication.primaryScreen().availableGeometry()
         self.resize(screen_geometry.width(), screen_geometry.height())
 
-        # Main layout
-        main_layout = QHBoxLayout()
+        self.drawing_canvas = HandDrawingCanvas()
+
+# Initialize the main layout as an instance attribute
+        self.main_layout = QHBoxLayout()  # Use QHBoxLayout for the main layout
+        self.setLayout(self.main_layout)  # Set the main layout for the widge
+
 
         # Left side layout for sliders (combined and compact)
         self.left_layout = QVBoxLayout()
         self.left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+
+        # Right layout (Lyrics, Webcam, etc.)
+        right_layout = QVBoxLayout()
+        self.main_layout.addLayout(right_layout)
 
 
         # Label for combined sliders
@@ -385,10 +394,7 @@ class LyricsApp(QWidget):
         self.sidebar_widget.setLayout(self.left_layout)
         self.sidebar_widget.setFixedWidth(120)
         self.sidebar_widget.hide()
-        main_layout.addWidget(self.sidebar_widget)
-
-        # Right side layout for the rest of the UI
-        right_layout = QVBoxLayout()
+        self.main_layout.addWidget(self.sidebar_widget)  # Add sidebar to main layout
 
         # Background Image
         self.bg_label = QLabel(self)
@@ -435,16 +441,18 @@ class LyricsApp(QWidget):
         button_x = screen_geometry.width() - self.button_container.width() - 20
         button_y = 20
         self.button_container.move(button_x, button_y)
+        # Right layout (Lyrics, Webcam, etc.)
+        right_layout = QVBoxLayout()
+        self.main_layout.addLayout(right_layout)
 
-        # --- Lyrics Label ---
+        # ✅ Initialize the Lyrics Label first
         self.lyrics_label = QLabel("Waiting for lyrics...", self)
         self.lyrics_label.setWordWrap(True)  # Enable word wrap for long lyrics
         self.lyrics_label.setStyleSheet("font-size: 40px; font-weight: bold; color: white;")
         self.lyrics_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Add the lyrics label to the right layout
+        # ✅ Now, add it to the right layout
         right_layout.addWidget(self.lyrics_label)
-
 
         # Buttons for Lyrics Control
         button_layout = QHBoxLayout()
@@ -503,6 +511,49 @@ class LyricsApp(QWidget):
         self.webcam_label.setFixedSize(300, 250)  # Set a fixed size for the webcam feed
         self.webcam_label.setStyleSheet("border: 2px solid black; background-color: black;")
 
+
+        self.main_layout.addLayout(right_layout)
+
+  # Update this section for setting the color with RGB tuples
+        color_layout = QHBoxLayout()
+        for color in [QColor('red'), QColor('green'), QColor('blue')]:
+            btn = QPushButton()
+            btn.setStyleSheet(f"background-color: {color.name()}; width: 80px; height: 40px;")
+            rgb_color = (color.red(), color.green(), color.blue())  # Convert to RGB tuple
+            btn.clicked.connect(lambda _, c=rgb_color: self.drawing_canvas.set_color(c))
+            color_layout.addWidget(btn)
+
+        # ✅ Initialize the Brush Slider First
+        self.brush_slider = QSlider(Qt.Orientation.Horizontal)
+        self.brush_slider.setMinimum(1)
+        self.brush_slider.setMaximum(20)
+        self.brush_slider.setValue(7)
+        self.brush_slider.setFixedWidth(self.webcam_label.width())
+        self.brush_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: white;
+                height: 10px;
+                border-radius: 5px;
+            }
+            QSlider::handle:horizontal {
+                background: black;
+                width: 20px;
+                height: 20px;
+                margin: -5px 0;
+                border-radius: 10px;
+            }
+        """)
+        self.brush_slider.valueChanged.connect(lambda value: self.drawing_canvas.set_brush_thickness(value))
+
+        # ✅ Create a combined layout for slider and color picker after initializing brush_slider
+        bottom_control_layout = QVBoxLayout()
+        bottom_control_layout.addWidget(self.brush_slider)
+        bottom_control_layout.addLayout(color_layout)
+
+        # Position the layout below the webcam
+        self.main_layout.addLayout(bottom_control_layout)
+
+
         # Position the webcam label at the far right side of the screen
         screen_geometry = QApplication.primaryScreen().availableGeometry()
         webcam_x = (screen_geometry.width() - self.webcam_label.width()) - 50  # Align to the right
@@ -516,15 +567,13 @@ class LyricsApp(QWidget):
             print("⚠️ Webcam not accessible!")
 
         # Timer to update webcam feed
-        self.webcam_timer = QTimer()
-        self.webcam_timer.timeout.connect(self.update_webcam_feed)
-        self.webcam_timer.start(30)
-
+        self.capture = cv2.VideoCapture(0)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_webcam)
+        self.timer.start(30)
         # Add the right layout to the main layout
-        main_layout.addLayout(right_layout)
+        self.main_layout.addLayout(right_layout)
 
-        # Set the main layout for the window
-        self.setLayout(main_layout)
 
         # Timers
         self.lyrics_timer = QTimer()
@@ -548,6 +597,21 @@ class LyricsApp(QWidget):
         # Install event filter on the main window
         self.installEventFilter(self)
 
+    def update_webcam(self):
+        """Capture, process, and display the webcam feed."""
+        ret, frame = self.capture.read()
+        if ret:
+            # Resize the frame to match the webcam_label
+            frame = cv2.resize(frame, (self.webcam_label.width(), self.webcam_label.height()))
+            
+            # Process the frame through the drawing canvas
+            processed_frame = self.drawing_canvas.process_frame(frame)
+            
+            # Convert processed frame to RGB and set to QLabel
+            qt_image = QImage(processed_frame.data, processed_frame.shape[1], processed_frame.shape[0], QImage.Format.Format_BGR888)
+            self.webcam_label.setPixmap(QPixmap.fromImage(qt_image))
+
+        
     def update_webcam_feed(self):
         """Capture, process, and display the webcam feed."""
         ret, frame = self.capture.read()
@@ -788,9 +852,9 @@ class LyricsApp(QWidget):
             print("Webcam resource released.")
 
     def closeEvent(self, event):
-        """Release webcam resources upon closing the window."""
-        self.cleanup_resources()
-        event.accept()
+        if self.capture.isOpened():
+            self.capture.release()
+
         
     def remove_background(self, image_path):
         """Removes the background from the given image and returns the output path."""
