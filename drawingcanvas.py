@@ -2,36 +2,53 @@ import cv2
 import numpy as np
 import mediapipe as mp
 from dorothy import Dorothy
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QImage, QPixmap
+from PyQt6.QtWidgets import QLabel
 
 class HandDrawingCanvas:
-    def __init__(self, width=1280, height=720):
-        self.width = width
-        self.height = height
-        self.color = (255, 0, 0)
+    def __init__(self, drawing_label):
+    
+        self.drawing_label = drawing_label
+        self.width = drawing_label.width()
+        self.height = drawing_label.height()
+
+        self.color = (255, 0, 0)  # Default drawing color (red)
         self.brush_thickness = 7
         self.prev_x, self.prev_y = None, None
         self.drawing = False
 
-        # Initialize Dorothy and manually create the canvas layer
-        self.dorothy = Dorothy()
-        self.canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-        self.dorothy.set_stroke_weight(self.brush_thickness)
-        self.dorothy.stroke(self.color)
+        # Initialize the canvas with a transparent background
+        self.canvas = np.zeros((self.height, self.width, 4), dtype=np.uint8)  # 4 channels for RGBA
+        self.canvas[:, :, 3] = 0  # Set alpha channel to 0 (fully transparent)
 
-        # Mediapipe Hand Detection
+        # Reference to the drawing label
+        self.drawing_label = drawing_label
+
+        # Initialize Mediapipe Hands
         self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5, max_num_hands=1)
+        self.hands = self.mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.5
+        )
         self.mp_draw = mp.solutions.drawing_utils
 
     def draw_dorothy_brush(self, x, y):
         """Draw using Dorothy's API with smooth and constant strokes."""
         if self.prev_x is not None and self.prev_y is not None:
-            self.dorothy.line(pt1=(self.prev_x, self.prev_y), pt2=(x, y), layer=self.canvas)
+            cv2.line(self.canvas, (self.prev_x, self.prev_y), (x, y), self.color + (255,), self.brush_thickness)
         else:
-            self.dorothy.circle(centre=(x, y), radius=self.brush_thickness // 2, layer=self.canvas)
+            cv2.circle(self.canvas, (x, y), self.brush_thickness // 2, self.color + (255,), -1)
         self.prev_x, self.prev_y = x, y
-        self.dorothy.update_canvas()
+        self.update_drawing_label()
+
+    def update_drawing_label(self):
+        """Update the drawing label with the current canvas."""
+        if isinstance(self.drawing_label, QLabel):
+            # Convert the canvas to a QImage with transparency
+            qt_image = QImage(self.canvas.data, self.width, self.height, QImage.Format.Format_RGBA8888)
+            self.drawing_label.setPixmap(QPixmap.fromImage(qt_image))
 
     def process_frame(self, frame):
         """Process each frame for hand detection and drawing."""
@@ -53,14 +70,20 @@ class HandDrawingCanvas:
             self.drawing = False
             self.prev_x, self.prev_y = None, None
 
-        # Ensure canvas matches frame size
-        dorothy_canvas = cv2.resize(self.canvas, (frame.shape[1], frame.shape[0]))
-        output = cv2.addWeighted(frame, 0.7, dorothy_canvas, 0.3, 0)
-        return output
+        return frame
+    def update_canvas_size(self):
+        """Update the canvas size based on the drawing_label's size."""
+        self.width = self.drawing_label.width()
+        self.height = self.drawing_label.height()
+        self.canvas = np.zeros((self.height, self.width, 4), dtype=np.uint8)  # Ensure 4 channels for transparency
+        self.canvas[:, :, 3] = 0  # Keep it fully transparent initially
+        self.update_drawing_label()  # Refresh the drawing label
 
     def clear_canvas(self):
         """Clear Dorothy's canvas."""
-        self.canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        self.canvas = np.zeros((self.height, self.width, 4), dtype=np.uint8)  
+        self.update_drawing_label()
+
 
     def set_color(self, new_color):
         """Set a new drawing color."""
@@ -68,12 +91,10 @@ class HandDrawingCanvas:
             self.color = (new_color.red(), new_color.green(), new_color.blue())
         else:
             self.color = new_color
-        self.dorothy.stroke(self.color)
 
     def set_brush_thickness(self, thickness):
         """Set a new brush thickness."""
         self.brush_thickness = thickness
-        self.dorothy.set_stroke_weight(self.brush_thickness)
 
     def get_canvas(self):
         """Return the current canvas."""

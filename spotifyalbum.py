@@ -1,5 +1,5 @@
 import requests
-from PIL import Image
+from PIL import Image , QImage
 from io import BytesIO
 from LyricsFetcher import get_lyrics
 from spotifylyrics import get_current_song
