@@ -5,7 +5,7 @@ from dorothy import Dorothy
 from PyQt6.QtGui import QColor
 
 class HandDrawingCanvas:
-    def __init__(self, width=600, height=600):
+    def __init__(self, width=1280, height=720):
         self.width = width
         self.height = height
         self.color = (255, 0, 0)
@@ -45,7 +45,7 @@ class HandDrawingCanvas:
 
             index_finger_tip = hand_landmarks.landmark[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
             h, w, _ = frame.shape
-            x, y = int(index_finger_tip.x * w), int(index_finger_tip.y * h)
+            x, y = int(index_finger_tip.x * self.width), int(index_finger_tip.y * self.height)
 
             self.draw_dorothy_brush(x, y)
             self.drawing = True
