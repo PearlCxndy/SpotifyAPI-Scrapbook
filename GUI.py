@@ -20,8 +20,10 @@ from emoji_generator import extract_lyrics_themes
 from spotifylyrics import get_current_song
 from LyricsFetcher import get_lyrics, convert_to_seconds
 from sticker import generate_ai_image, remove_image_background
-# from spotifyalbum import fetch_current_track_data
+from spotifyalbum import fetch_current_track_data,set_canvas_bg_from_album, pick_canvas_bg_color
 from drawingcanvas import HandDrawingCanvas
+
+
 
 
 
@@ -266,21 +268,7 @@ class LyricsApp(QWidget):
             self.custom_font = font_families[0] if font_families else "Arial"
             print(f"Custom font loaded: {self.custom_font}")
 
-        # Get screen dimensions
-
-
         
-        screen_geometry = QApplication.primaryScreen().availableGeometry()
-        self.resize(screen_geometry.width(), screen_geometry.height())
-        self.drawing_label = QLabel(self)
-        self.drawing_label.setFixedSize(screen_geometry.width(), screen_geometry.height())
-        self.drawing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.drawing_label.raise_()  # Ensure it appears on top of other widgets
-
-
-        # Initialize the drawing canvas with the drawing label
-        self.drawing_canvas = HandDrawingCanvas(self.drawing_label)  # Pass the drawing_label here
 
 
         # Initialize the main layout as an instance attribute
@@ -386,21 +374,27 @@ class LyricsApp(QWidget):
         self.stacked_layout = QStackedLayout()
         self.left_layout.addLayout(self.stacked_layout)
 
-        # Add left layout to main layout (hidden by default)
-        self.sidebar_widget = QWidget()
+        # --- Adjust Sidebar for Left Alignment ---
+        self.sidebar_widget = QWidget(self)
         self.sidebar_widget.setLayout(self.left_layout)
         self.sidebar_widget.setFixedWidth(120)
-        self.sidebar_widget.hide()
-        self.main_layout.addWidget(self.sidebar_widget)  # Add sidebar to main layout
+
+        # Move the sidebar to the far left
+        self.sidebar_widget.move(0, 0)
+        self.sidebar_widget.raise_()  # Ensure the sidebar is on top
+
+        # Add the sidebar to the main layout on the left
+        self.main_layout.insertWidget(0, self.sidebar_widget)  # Insert at index 0 to make it leftmost
 
 
+  
         # Background Image
         self.bg_label = QLabel(self)
         pixmap = QPixmap("/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/scrapbook.png")
         if pixmap.isNull():
             print("Failed to load background image")
 
-        # Scale the image to 10% larger
+        # Scale the image
         original_width = pixmap.width()
         original_height = pixmap.height()
         scaled_width = int(original_width * 0.8)
@@ -411,22 +405,87 @@ class LyricsApp(QWidget):
             Qt.TransformationMode.SmoothTransformation
         )
 
-
-
         # Set the scaled pixmap to the label
         self.bg_label.setPixmap(scaled_pixmap)
-        self.bg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.bg_label.setFixedSize(scaled_width, scaled_height)
+        self.bg_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Center the background image on the screen
         window_width = self.width()
         window_height = self.height()
         x = (window_width - scaled_width) // 2
-        y = (window_height - scaled_height) // 2
+        y = ((window_height - scaled_height) // 2) - 600
         self.bg_label.move(x, y)
 
+      # Drawing Label (aligned and on top of scrapbook)
+        self.drawing_label = QLabel(self)
+        self.drawing_label.setGeometry(self.bg_label.geometry())  # Align perfectly with scrapbook
+        self.drawing_label.setStyleSheet("background: transparent;")  # Ensure transparent background
+        self.drawing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-  
+        self.bg_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        self.bg_label.raise_() 
+
+
+        # Center the background image on the screen
+        window_width = self.width()
+        window_height = self.height()
+        x = (window_width - scaled_width) // 2
+        y = ((window_height - scaled_height) // 2) - 600
+        self.bg_label.move(x, y)
+
+        # Drawing Label (aligned and on top of scrapbook)
+        self.drawing_label = QLabel(self)
+        self.drawing_label.setGeometry(self.bg_label.geometry())  # Align perfectly with scrapbook
+        self.drawing_label.setStyleSheet("background: transparent;")  # Ensure transparent background
+        self.drawing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.bg_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.bg_label.raise_()
+
+        # Auto Color from Album Art Button (independently placed)
+        self.auto_color_button = QPushButton("Auto BG Color", self)
+        self.auto_color_button.setStyleSheet("""
+            QPushButton {
+                width: 120px;
+                height: 40px;
+                border-radius: 8px;
+                background-color: #4CAF50;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #45A049;
+            }
+        """)
+        self.auto_color_button.move(350, 100)
+        self.auto_color_button.clicked.connect(lambda: set_canvas_bg_from_album(self))
+        self.auto_color_button.raise_()  # Ensure it stays on top
+
+        # Manual Color Picker Button (independently placed)
+        self.manual_color_button = QPushButton("Pick BG Color", self)
+        self.manual_color_button.setStyleSheet("""
+            QPushButton {
+                width: 120px;
+                height: 40px;
+                border-radius: 8px;
+                background-color: #2196F3;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #1E88E5;
+            }
+        """)
+        self.manual_color_button.move(480, 100)
+        self.manual_color_button.clicked.connect(lambda: pick_canvas_bg_color(self))
+        self.manual_color_button.raise_()  # Ensure it stays on top
+
+
+        # Force the scrapbook to be on top
+        self.bg_label.raise_()
+
+        # Initialize the drawing canvas with the drawing label
+        self.drawing_canvas = HandDrawingCanvas(self.drawing_label)
 
         # --- Create a container widget for the buttons ---
         self.button_container = QWidget(self)
@@ -449,8 +508,9 @@ class LyricsApp(QWidget):
         # ✅ Initialize the Lyrics Label first
         self.lyrics_label = QLabel("Waiting for lyrics...", self)
         self.lyrics_label.setWordWrap(True)  # Enable word wrap for long lyrics
-        self.lyrics_label.setStyleSheet("font-size: 40px; font-weight: bold; color: black;")
+        self.lyrics_label.setStyleSheet("font-size: 30px; font-weight: bold; color: black;")
         self.lyrics_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
 
         # ✅ Now, add it to the right layout
         right_layout.addWidget(self.lyrics_label)
@@ -460,12 +520,17 @@ class LyricsApp(QWidget):
         self.refresh_button = QPushButton("Refresh Lyrics", self)
         self.refresh_button.clicked.connect(self.refresh_lyrics)
         self.refresh_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
+        self.refresh_button.raise_()  # Ensure it's above the background
         button_layout.addWidget(self.refresh_button)
+
+        
 
         self.toggle_button = QPushButton("Show Full Lyrics", self)
         self.toggle_button.clicked.connect(self.show_full_lyrics)
         self.toggle_button.setStyleSheet("background: white; font-size: 18px; padding: 10px 20px; color: black;")
         button_layout.addWidget(self.toggle_button)
+        self.toggle_button.raise_()  # Ensure it's above the background
+
 
         right_layout.addLayout(button_layout)
 
@@ -497,46 +562,54 @@ class LyricsApp(QWidget):
         self.upload_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.add_text_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
 
-        # Raise the buttons to ensure they are on top
-        self.button_container.raise_()
-        self.emoji_toggle_button.raise_()
-        self.sticker_toggle_button.raise_()
-        self.upload_button.raise_()
-        self.add_text_button.raise_()
-
-         # --- Create Webcam Label for Display ---
+   # --- Create Webcam Label for Display ---
         self.webcam_label = QLabel(self)
         self.webcam_label.setFixedSize(300, 250)  # Set a fixed size for the webcam feed
         self.webcam_label.setStyleSheet("border: 2px solid black; background-color: black;")
 
 
+         # --- Create a container widget for color picker and slider ---
+        self.color_picker_container = QWidget(self)
+        self.color_picker_container.setStyleSheet("background: rgba(255, 255, 255, 0.8); border-radius: 10px;")
+        self.color_picker_container.setFixedSize(240, 120)
+        self.color_picker_container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.color_picker_container.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
-        # Updated color layout with a color picker
-        color_layout = QHBoxLayout()
+        # --- Layout for Color Picker and Brush Slider ---
+        color_layout = QVBoxLayout()
 
-        # Add a button to open the color picker dialog
-        color_picker_button = QPushButton("Pick Color")
-        color_picker_button.setStyleSheet("width: 80px; height: 40px;")
+        # --- Color Picker Button ---
+        self.color_picker_button = QPushButton("Pick Color", self.color_picker_container)
+        self.color_picker_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.color_picker_button.setStyleSheet("""
+            QPushButton {
+                width: 100px;
+                height: 40px;
+                border-radius: 8px;
+                background-color: #e0e0e0;
+            }
+            QPushButton:hover {
+                background-color: #d6d6d6;
+            }
+        """)
 
         def open_color_picker():
             color = QColorDialog.getColor()
             if color.isValid():
                 rgb_color = (color.red(), color.green(), color.blue())
                 self.drawing_canvas.set_color(rgb_color)
-                color_picker_button.setStyleSheet(f"background-color: {color.name()}; width: 80px; height: 40px;")  # Update button color
+                self.color_picker_button.setStyleSheet(f"background-color: {color.name()}; width: 100px; height: 40px; border-radius: 8px;")
 
+        self.color_picker_button.clicked.connect(open_color_picker)
+        color_layout.addWidget(self.color_picker_button)
 
-    
-
-        color_picker_button.clicked.connect(open_color_picker)
-        color_layout.addWidget(color_picker_button)
-
-        # ✅ Initialize the Brush Slider First
-        self.brush_slider = QSlider(Qt.Orientation.Horizontal)
+        # --- Brush Slider ---
+        self.brush_slider = QSlider(Qt.Orientation.Horizontal, self.color_picker_container)
         self.brush_slider.setMinimum(1)
         self.brush_slider.setMaximum(20)
         self.brush_slider.setValue(7)
-        self.brush_slider.setFixedWidth(self.webcam_label.width())
+        self.brush_slider.setFixedWidth(150)
+        self.brush_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.brush_slider.setStyleSheet("""
             QSlider::groove:horizontal {
                 background: white;
@@ -552,19 +625,61 @@ class LyricsApp(QWidget):
             }
         """)
         self.brush_slider.valueChanged.connect(lambda value: self.drawing_canvas.set_brush_thickness(value))
+        color_layout.addWidget(self.brush_slider)
 
-        # ✅ Create a combined layout for slider and color picker after initializing brush_slider
-        bottom_control_layout = QVBoxLayout()
-        bottom_control_layout.addWidget(self.brush_slider)
-        bottom_control_layout.addLayout(color_layout)
+                # --- Reset Canvas Button ---
+        self.reset_canvas_button = QPushButton("Reset Canvas", self.color_picker_container)
+        self.reset_canvas_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.reset_canvas_button.setStyleSheet("""
+            QPushButton {
+                width: 100px;
+                height: 40px;
+                border-radius: 8px;
+                background-color: #f44336;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #e53935;
+            }
+        """)
+        self.reset_canvas_button.clicked.connect(self.drawing_canvas.clear_canvas)
+        color_layout.addWidget(self.reset_canvas_button)
 
-        # Position the layout below the webcam
-        self.main_layout.addLayout(bottom_control_layout)
+
+        # Set layout to the container
+        self.color_picker_container.setLayout(color_layout)
+
+        # --- Position above webcam ---
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        webcam_x = (screen_geometry.width() - self.webcam_label.width()) + 50
+        webcam_y = (screen_geometry.height() - self.webcam_label.height()) - 100
+        self.color_picker_container.move(webcam_x, webcam_y - 150)
+
+        # --- Ensure layers are correct ---
+        self.color_picker_container.raise_()
+        self.color_picker_button.raise_()
+        self.brush_slider.raise_()
+
+        # --- Enable Mouse Interactions ---
+        self.color_picker_container.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.color_picker_button.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.brush_slider.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+
+        # --- Show Container ---
+        self.color_picker_container.show()
+
+
+        # Also ensure webcam and drawing canvas layers are correct
+        self.webcam_label.raise_()
+        self.drawing_label.raise_()
+        self.color_picker_container.raise_()
+
+                
 
 
         # Position the webcam label at the far right side of the screen
         screen_geometry = QApplication.primaryScreen().availableGeometry()
-        webcam_x = (screen_geometry.width() - self.webcam_label.width()) - 50  # Align to the right
+        webcam_x = (screen_geometry.width() - self.webcam_label.width()) + 50  # Align to the right
         webcam_y = (screen_geometry.height() - self.webcam_label.height()) - 100  # Align to the bottom
         self.webcam_label.move(webcam_x, webcam_y)
         self.webcam_label.raise_()  # Ensure it appears on top of other widgets
@@ -579,6 +694,29 @@ class LyricsApp(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_webcam)
         self.timer.start(30)
+
+         # Raise the buttons to ensure they are on top
+        self.button_container.raise_()
+        self.emoji_toggle_button.raise_()
+        self.sticker_toggle_button.raise_()
+        self.upload_button.raise_()
+        self.manual_color_button.raise_() 
+        self.auto_color_button.raise_()       # Sidebar on top
+
+      # Ensure bg_color_container is behind the scrapbook
+        self.bg_label.raise_()                    # Raise the scrapbook image above the background color
+        self.drawing_label.raise_()               # Drawing layer on top of scrapbook
+        self.lyrics_label.raise_()                # Lyrics label on top of scrapbook and color container
+        self.refresh_button.raise_()              # Refresh button on top
+        self.toggle_button.raise_()               # Toggle button on top
+        self.sidebar_widget.raise_()        
+
+        self.button_container.raise_()            # Control buttons on top
+        self.webcam_label.raise_()                # Webcam on top
+        self.color_picker_container.raise_()      # Color picker on top
+
+
+                
 
         # Timers
         self.lyrics_timer = QTimer()
@@ -595,9 +733,37 @@ class LyricsApp(QWidget):
 
 
     def resizeEvent(self, event):
-        """Update canvas size when the main window is resized."""
-        self.drawing_canvas.update_canvas_size()
-        super().resizeEvent(event)
+            """Ensure canvas and scrapbook stay aligned during resize."""
+            # Center the scrapbook image
+            window_width = self.width()
+            window_height = self.height()
+            x = (window_width - self.bg_label.width()) // 2
+            y = (window_height - self.bg_label.height()) // 2
+            self.bg_label.move(x, y)
+
+            #lyrics label
+            label_x = (self.width() // 2 - self.lyrics_label.width() // 2) + 330
+            label_y = self.height() - self.lyrics_label.height() + 240 
+            self.lyrics_label.move(label_x, label_y)
+
+            # Re-align the drawing label to match the scrapbook position
+            self.drawing_label.setGeometry(self.bg_label.geometry())
+
+            # Correct layering on resize
+            self.bg_label.raise_()                # Scrapbook in front of bg_color_container
+            self.drawing_label.raise_()           # Drawing canvas on top of scrapbook
+            self.lyrics_label.raise_()            # Lyrics label on top of scrapbook and color container
+            self.refresh_button.raise_()          # Refresh button on top
+            self.toggle_button.raise_()           # Full lyrics button on top
+            self.manual_color_button.raise_() 
+            self.auto_color_button.raise_() 
+            self.sidebar_widget.raise_()          # Sidebar on top
+            self.button_container.raise_()        # Buttons on top
+            self.webcam_label.raise_()            # Webcam on top
+            self.color_picker_container.raise_()  # Color picker on top
+
+            super().resizeEvent(event)
+
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
@@ -718,6 +884,7 @@ class LyricsApp(QWidget):
         lyrics_label.setWordWrap(True)
         lyrics_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         lyrics_label.setStyleSheet("font-size: 16px; padding: 10px;")
+        
         
         # Layout for the dialog
         layout = QVBoxLayout()
