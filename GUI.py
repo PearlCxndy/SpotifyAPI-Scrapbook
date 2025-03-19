@@ -286,7 +286,7 @@ class LyricsApp(QWidget):
         self.sticker_enabled = False
         self.selected_item = None
 
-        font_path = "/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
+        font_path = "/Users/PearlCxndie_1/Documents/GitHub/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
         font_id = QFontDatabase.addApplicationFont(font_path)
         if font_id == -1:
             print("Failed to load custom font. Falling back to Arial.")
@@ -409,7 +409,7 @@ class LyricsApp(QWidget):
   
         # Background Image
         self.bg_label = QLabel(self)
-        pixmap = QPixmap("/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/scrapbook.png")
+        pixmap = QPixmap("/Users/PearlCxndie_1/Documents/GitHub/SpotifyAPI-Scrapbook/scrapbook.png")
         original_width = pixmap.width()
         original_height = pixmap.height()
         scaled_width = int(original_width * 0.8)
@@ -701,7 +701,6 @@ class LyricsApp(QWidget):
 
 
     def resizeEvent(self, event):
-            """Ensure canvas and scrapbook stay aligned during resize."""
             window_width = self.width()
             window_height = self.height()
             x = (window_width - self.bg_label.width()) // 2
@@ -826,7 +825,6 @@ class LyricsApp(QWidget):
                 self.sidebar_widget.hide()
 
     def show_full_lyrics(self):
-        """Show full lyrics in a popup window, including the song title and make it scrollable."""
         song_info = get_current_song()
         song_title = song_info[0] if song_info and song_info[0] else "Unknown Song"
         artist_name = song_info[1] if song_info and song_info[1] else "Unknown Artist"
@@ -949,21 +947,18 @@ class LyricsApp(QWidget):
             draggable_image.show()
 
     def update_emoji_size(self, value):
-        """Update the size of emojis based on the slider value."""
         self.emoji_size = value
         for emoji in self.active_emojis:
             emoji.setFont(QFont(self.custom_font, self.emoji_size))  
             emoji.setFixedSize(self.emoji_size, self.emoji_size)
 
     def update_image_size(self, value):
-        """Update the size of images based on the slider value."""
         self.image_size = value
         for child in self.children():
             if isinstance(child, ResizableDraggableImage):
                 child.resize_image(self.image_size)
 
     def cleanup_resources(self):
-        """Ensure webcam is released on app exit."""
         if self.capture.isOpened():
             self.capture.release()
             print("Webcam resource released.")
@@ -973,7 +968,6 @@ class LyricsApp(QWidget):
             self.capture.release()
         
     def remove_background(self, image_path):
-        """Removes the background from the given image and returns the output path."""
         output_path = os.path.join(os.path.dirname(image_path), "removed_bg.png")
         with open(image_path, "rb") as input_file:
             input_data = input_file.read()
@@ -985,7 +979,7 @@ class LyricsApp(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    font_path = "/Users/PearlCxndie_1/Documents/GitHub/PComp-Sprint/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
+    font_path = "/Users/PearlCxndie_1/Documents/GitHub/SpotifyAPI-Scrapbook/Remingtoned Type.ttf"
     font_id = QFontDatabase.addApplicationFont(font_path)
     if font_id == -1:
         print("Failed to load custom font. Falling back to Arial.")
