@@ -8,17 +8,13 @@ from sentence_transformers import SentenceTransformer, util
 import json
 import os
 
-# Load Hugging Face NLP models
+
 print("Loading models... (this may take a while on first run)")
 emotion_model = pipeline("text-classification", model="bhadresh-savani/distilbert-base-uncased-emotion", top_k=3)
-
-# Configure YAKE keyword extractor
 keyword_extractor = yake.KeywordExtractor(lan="en", n=3, dedupLim=0.9, top=5)
-
-# Load Sentence Transformer model for semantic similarity
 similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Load emoji data from local directory
+
 emoji_data_path = os.path.join('local_emoji_data', 'emoji.json')
 with open(emoji_data_path, 'r', encoding='utf-8') as f:
     emoji_data = json.load(f)
@@ -60,4 +56,3 @@ def extract_lyrics_themes(lyrics):
 
     return top_emotions, keywords, emojis
 
-# Removed all standalone execution and GUI display logic to avoid conflicts when imported.
