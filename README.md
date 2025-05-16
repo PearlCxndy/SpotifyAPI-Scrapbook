@@ -3,7 +3,7 @@
 ## Project Overview
 This project is an **AI-powered interactive digital scrapbook** that dynamically generates **emojis, AI-generated stickers, and user-drawn elements** based on real-time Spotify lyrics. Using **machine learning models, computer vision, and an interactive UI**, users can create personalised digital scrapbooks by integrating text, gestures, and media elements.
 
-![Overview](AI_Scrapbook_Pic/1.png)
+![Overview](1.png)
 
 ## Video Demo
 [🔗  !!! Click here to watch the project demo !!!!](https://youtu.be/utf3sw_DRpA)
